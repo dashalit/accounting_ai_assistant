@@ -1,160 +1,47 @@
-# Document Processor
+ Лабораторная работа №5
+**Тема:** Реализация архитектуры на основе сервисов (микросервисной архитектуры)  
+**Цель работы:** Получить опыт организации взаимодействия сервисов с использованием контейнеров Docker.
 
-Модуль для конвертации PDF и DOCX документов в векторные представления (embeddings).
-Архитектура основана на GoF и GRASP паттернах проектирования.
+Проект представляет собой сервис обработки документов и векторного поиска. Серверная часть реализована на **FastAPI** и предоставляет REST API для загрузки PDF/DOCX-документов, их разбиения на чанки, построения эмбеддингов и поиска по векторному хранилищу.
 
-## Архитектурные паттерны
+## Реализованная контейнерная архитектура
+В репозитории описана контейнеризация приложения через `docker-compose.yml`.
 
-### GoF Patterns
-- **Strategy** — стратегии чанкинга и embedding моделей
-- **Factory Method** — фабрика загрузчиков документов
-- **Facade** — упрощённый интерфейс через `DocumentVectorizer`
-- **Adapter** — адаптеры для сторонних библиотек (PyMuPDF, python-docx)
+Используются следующие контейнеры:
+- **api** — основной серверный сервис с FastAPI;
+- **nginx** — обратный прокси для публикации API;
+- **redis** — дополнительный сервис для кэширования/расширения архитектуры.
 
-### GRASP Principles
-- **Information Expert** — доменная логика в моделях (Document, Chunk, Vector)
-- **Low Coupling** — слабая связанность через интерфейсы
-- **Controller** — `DefaultDocumentProcessor` управляет потоком обработки
-- **High Cohesion** — каждый класс отвечает за одну задачу
+Основное взаимодействие организовано через Docker Compose и общую сеть `doc-network`.
 
-## Установка
+## Взаимодействие сервисов
+Сервис `api` собирается из `Dockerfile`, запускается на порту `8000`, имеет healthcheck и хранит данные в примонтированных каталогах `./data` и `./logs`.  
+Сервис `nginx` зависит от готовности `api` и может использоваться как точка входа.  
+Сервис `redis` подключается как дополнительный инфраструктурный контейнер.
 
+Запуск:
 ```bash
-pip install -r requirements.txt
+docker-compose up -d
+docker-compose --profile with-nginx up -d
+docker-compose --profile with-nginx --profile with-redis up -d
 ```
 
-## Быстрый старт
+## Непрерывная интеграция
+В репозитории настроен GitHub Actions workflow `ci.yml`.
 
-```python
-from document_processor import DocumentVectorizer
+В рамках CI выполняется:
+- checkout исходного кода;
+- сборка Docker-образа через `Dockerfile.ci`;
+- проверка запуска приложения через health-check.
 
-# Инициализация с настройками по умолчанию
-vectorizer = DocumentVectorizer()
+## Тестирование
+Тесты для API и внутренних модулей:
+- `tests/api/test_api.py`;
+- тесты для `vector_store`;
+- тесты для `chunkers`, `embeddings`, `facade`, `loaders`, `processor`.
 
-# Векторизация документа
-doc = vectorizer.vectorize("document.pdf")
-print(f"Создано векторов: {len(doc.vectors)}")
-print(f"Размерность: {doc.vectors[0].dimension}")
+API-тесты проверяют основные сценарии: доступность `/` и `/health`, загрузку документов, поиск, пакетную обработку, удаление и получение статистики.
 
-# Пакетная обработка
-docs = vectorizer.vectorize_batch(["file1.pdf", "file2.docx"])
-```
-
-## Конфигурация
-
-### Настройки чанкинга
-
-```python
-from document_processor import DocumentVectorizer, RecursiveChunker
-
-# Рекурсивный чанкер (рекомендуется)
-vectorizer = DocumentVectorizer(
-    chunk_size=500,      # Размер чанка в символах
-    chunk_overlap=50,    # Перекрытие между чанками
-)
-
-# Фиксированный чанкер
-from document_processor import FixedSizeChunker
-chunker = FixedSizeChunker(chunk_size=1000, overlap=100)
-vectorizer.set_chunker(chunker)
-```
-
-### Выбор embedding модели
-
-```python
-# Mock модель для тестов (быстро, не требует загрузки)
-vectorizer = DocumentVectorizer(embedding_model="mock")
-
-# Real модель (требует интернета для первой загрузки)
-vectorizer = DocumentVectorizer(
-    embedding_model="sentence-transformers/all-MiniLM-L6-v2"
-)
-
-# Custom модель
-from document_processor import SentenceTransformerEmbedder
-embedder = SentenceTransformerEmbedder(
-    model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-    device="cuda"  # или "cpu"
-)
-vectorizer.set_embedder(embedder)
-```
-
-## API
-
-### DocumentVectorizer
-
-| Метод | Описание |
-|-------|----------|
-| `vectorize(path)` | Векторизовать один документ |
-| `vectorize_batch(paths)` | Векторизовать несколько документов |
-| `extract_text(path)` | Извлечь текст без векторизации |
-| `set_chunker(chunker)` | Изменить стратегию чанкинга |
-| `set_embedder(embedder)` | Изменить модель эмбеддингов |
-
-### Document
-
-| Атрибут | Тип | Описание |
-|---------|-----|----------|
-| `path` | str | Путь к файлу |
-| `type` | DocumentType | Тип документа (PDF/DOCX) |
-| `content` | str | Полный текст документа |
-| `chunks` | List[Chunk] | Список чанков |
-| `vectors` | List[Vector] | Список векторов |
-| `metadata` | dict | Метаданные документа |
-
-### Chunk
-
-| Атрибут | Тип | Описание |
-|---------|-----|----------|
-| `content` | str | Текст чанка |
-| `metadata` | dict | Метаданные (source, chunk_index, etc.) |
-
-### Vector
-
-| Атрибут | Тип | Описание |
-|---------|-----|----------|
-| `values` | List[float] | Векторные значения |
-| `chunk` | Chunk | Связанный чанк |
-| `dimension` | int | Размерность вектора |
-
-## Расширение
-
-### Добавление нового загрузчика
-
-```python
-from document_processor.core import DocumentLoader, Document, DocumentType
-
-class TXTLoader(DocumentLoader):
-    def load(self, path: str) -> Document:
-        with open(path) as f:
-            content = f.read()
-        return Document(path=path, type=DocumentType.TXT, content=content)
-    
-    def supports(self, document_type: DocumentType) -> bool:
-        return document_type == DocumentType.TXT
-
-# Регистрация
-from document_processor.loaders import LoaderFactory
-LoaderFactory.register_loader(DocumentType.TXT, TXTLoader)
-```
-
-### Добавление новой стратегии чанкинга
-
-```python
-from document_processor.core import ChunkingStrategy, Chunk
-
-class SemanticChunker(ChunkingStrategy):
-    def chunk(self, text: str, metadata: dict) -> list[Chunk]:
-        # Ваша логика чанкинга
-        return [Chunk(content=text, metadata=metadata)]
-```
-
-## Запуск тестов
-
-```bash
-pytest tests/ -v
-pytest tests/ -v --cov=document_processor
-```
 
 ## Структура проекта
 
@@ -182,6 +69,3 @@ document_processor/
 └── __init__.py
 ```
 
-## Лицензия
-
-MIT
