@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Main API service
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doc-vector-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-mock}
+      - CHUNK_SIZE=${CHUNK_SIZE:-500}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-50}
+      - USE_FAISS=${USE_FAISS:-false}
+      - VECTOR_DIMENSION=${VECTOR_DIMENSION:-384}
+      - PYTHONPATH=/app
+      - DOCKER_ENV=true
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - doc-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # Optional: Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: doc-vector-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - doc-network
+    profiles:
+      - with-nginx
+
+  # Optional: Redis for caching (future use)
+  redis:
+    image: redis:7-alpine
+    container_name: doc-vector-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - doc-network
+    profiles:
+      - with-redis
+
+networks:
+  doc-network:
+    driver: bridge
+
+volumes:
+  redis-data:
