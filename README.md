@@ -19,6 +19,13 @@
 Сервис `nginx` зависит от готовности `api` и может использоваться как точка входа.  
 Сервис `redis` подключается как дополнительный инфраструктурный контейнер.
 
+Запуск:
+```bash
+docker-compose up -d
+docker-compose --profile with-nginx up -d
+docker-compose --profile with-nginx --profile with-redis up -d
+```
+
 Система разделяется на модули:
 
 **api** — внешний слой приложения. Здесь реализован HTTP-интерфейс для загрузки документов, поиска по ним, удаления и получения статистики. В репозитории этот модуль представлен каталогом api с файлом main.py.
@@ -33,12 +40,6 @@
 
 **.github/workflows** — модуль непрерывной интеграции, в котором хранится конфигурация CI для автоматической сборки и проверки проекта.
 
-Запуск:
-```bash
-docker-compose up -d
-docker-compose --profile with-nginx up -d
-docker-compose --profile with-nginx --profile with-redis up -d
-```
 
 ## Непрерывная интеграция
 В репозитории настроен GitHub Actions workflow `ci.yml`.
